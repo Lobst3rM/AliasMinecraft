@@ -22,10 +22,7 @@ public class Team {
         }
     }
 
-    public void removePlayer(UUID playerUuid) {
-        this.playerUuids.remove(playerUuid);
-    }
-
+    public void removePlayer(UUID playerUuid) { this.playerUuids.remove(playerUuid); }
     public void addScore(int points) { this.score += points; }
     public int getScore() { return score; }
     public List<UUID> getPlayerUuids() { return playerUuids; }

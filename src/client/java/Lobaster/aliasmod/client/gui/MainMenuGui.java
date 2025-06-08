@@ -1,6 +1,7 @@
 package Lobaster.aliasmod.client.gui;
 
 import Lobaster.aliasmod.client.AliasmodClient;
+import Lobaster.aliasmod.game.GameRoom;
 import Lobaster.aliasmod.game.RoomInfo;
 import Lobaster.aliasmod.networking.payload.JoinRoomC2SPayload;
 import Lobaster.aliasmod.networking.payload.RequestRoomListC2SPayload;
@@ -10,6 +11,7 @@ import io.github.cottonmc.cotton.gui.widget.data.Insets;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 
 import java.util.List;
 
@@ -29,22 +31,25 @@ public class MainMenuGui extends LightweightGuiDescription {
                     roomInfo.hostName(), roomInfo.playerCount(), roomInfo.maxPlayers());
             button.setLabel(Text.literal(buttonText));
 
-            button.setOnClick(() -> {
-                MinecraftClient.getInstance().setScreen(new LoadingScreen("Приєднання до кімнати..."));
-
-                ClientPlayNetworking.send(new JoinRoomC2SPayload(roomInfo.roomId()));
-            });
+            if (roomInfo.gameState() == GameRoom.GameState.IN_GAME) {
+                button.setEnabled(false);
+                button.setLabel(Text.literal(buttonText + " (Гра триває)").formatted(Formatting.RED));
+            } else {
+                button.setOnClick(() -> {
+                    button.setEnabled(false);
+                    button.setLabel(Text.literal("Приєднання...").formatted(Formatting.GRAY));
+                    ClientPlayNetworking.send(new JoinRoomC2SPayload(roomInfo.roomId()));
+                });
+            }
         });
-        root.add(roomList, 0, 3, 10, 6);
+
+        WScrollPanel scrollPanel = new WScrollPanel(roomList);
+        root.add(scrollPanel, 0, 3, 11, 6);
 
         WButton createGameButton = new WButton(Text.literal("Створити гру"));
-
         createGameButton.setOnClick(() -> {
             MinecraftClient.getInstance().setScreen(new LoadingScreen("Відкриття меню..."));
-
-            MinecraftClient.getInstance().execute(() -> {
-                MinecraftClient.getInstance().setScreen(new CreateGameScreen());
-            });
+            MinecraftClient.getInstance().execute(() -> MinecraftClient.getInstance().setScreen(new CreateGameScreen()));
         });
         root.add(createGameButton, 12, 3, 6, 1);
 
@@ -53,7 +58,6 @@ public class MainMenuGui extends LightweightGuiDescription {
         root.add(refreshButton, 12, 5, 6, 1);
 
         ClientPlayNetworking.send(RequestRoomListC2SPayload.INSTANCE);
-
         root.validate(this);
     }
 }

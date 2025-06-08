@@ -29,7 +29,7 @@ public class Aliasmod implements ModInitializer {
         PayloadTypeRegistry.playS2C().register(RoomListS2CPayload.ID, RoomListS2CPayload.CODEC);
         PayloadTypeRegistry.playS2C().register(GameRoundS2CPayload.ID, GameRoundS2CPayload.CODEC);
         PayloadTypeRegistry.playS2C().register(TimerTickS2CPayload.ID, TimerTickS2CPayload.CODEC);
-        PayloadTypeRegistry.playS2C().register(GameOverS2CPayload.ID, GameOverS2CPayload.CODEC); // Додано
+        PayloadTypeRegistry.playS2C().register(GameOverS2CPayload.ID, GameOverS2CPayload.CODEC);
         // C2S
         PayloadTypeRegistry.playC2S().register(CreateRoomC2SPayload.ID, CreateRoomC2SPayload.CODEC);
         PayloadTypeRegistry.playC2S().register(RequestRoomListC2SPayload.ID, RequestRoomListC2SPayload.CODEC);
@@ -38,6 +38,7 @@ public class Aliasmod implements ModInitializer {
         PayloadTypeRegistry.playC2S().register(ChangeTeamC2SPayload.ID, ChangeTeamC2SPayload.CODEC);
         PayloadTypeRegistry.playC2S().register(LeaveRoomC2SPayload.ID, LeaveRoomC2SPayload.CODEC);
         PayloadTypeRegistry.playC2S().register(PlayerActionC2SPayload.ID, PlayerActionC2SPayload.CODEC);
+        PayloadTypeRegistry.playC2S().register(RejoinRequestC2SPayload.ID, RejoinRequestC2SPayload.CODEC);
     }
 
     private void registerServerEvents() {
@@ -53,5 +54,6 @@ public class Aliasmod implements ModInitializer {
         ServerPlayNetworking.registerGlobalReceiver(ChangeTeamC2SPayload.ID, (payload, context) -> context.server().execute(() -> GameManager.changePlayerTeam(context.player(), payload.roomId(), payload.teamId())));
         ServerPlayNetworking.registerGlobalReceiver(LeaveRoomC2SPayload.ID, (payload, context) -> context.server().execute(() -> GameManager.removePlayerFromRoom(context.player(), payload.roomId())));
         ServerPlayNetworking.registerGlobalReceiver(PlayerActionC2SPayload.ID, (payload, context) -> context.server().execute(() -> GameManager.handlePlayerAction(context.player(), payload.roomId(), payload.action())));
+        ServerPlayNetworking.registerGlobalReceiver(RejoinRequestC2SPayload.ID, (payload, context) -> context.server().execute(() -> GameManager.resyncPlayer(context.player(), payload.roomId())));
     }
 }

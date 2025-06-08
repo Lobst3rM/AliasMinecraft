@@ -1,16 +1,15 @@
 package Lobaster.aliasmod.client;
 
 import Lobaster.aliasmod.Aliasmod;
-import Lobaster.aliasmod.client.gui.GameOverScreen;
-import Lobaster.aliasmod.client.gui.GameScreen;
-import Lobaster.aliasmod.client.gui.LobbyScreen;
-import Lobaster.aliasmod.client.gui.MainMenuScreen;
+import Lobaster.aliasmod.client.gui.*;
 import Lobaster.aliasmod.game.RoomInfo;
 import Lobaster.aliasmod.networking.payload.*;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import org.lwjgl.glfw.GLFW;
@@ -21,6 +20,8 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class AliasmodClient implements ClientModInitializer {
+    public enum ClientGameStatus { NONE, IN_LOBBY, IN_GAME }
+
     public static final List<String> receivedThemeNames = new ArrayList<>();
     public static final List<RoomInfo> activeRoomInfos = new ArrayList<>();
     public static Map<Integer, List<String>> currentLobbyState = new ConcurrentHashMap<>();
@@ -28,6 +29,7 @@ public class AliasmodClient implements ClientModInitializer {
     public static UUID currentRoomHostId = null;
     public static boolean canStartGame = false;
     public static String activePlayerName = "";
+    public static ClientGameStatus gameStatus = ClientGameStatus.NONE;
     private static KeyBinding openMenuKeyBinding;
 
     @Override
@@ -35,7 +37,15 @@ public class AliasmodClient implements ClientModInitializer {
         openMenuKeyBinding = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.aliasmod.open_menu", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_P, "category.aliasmod.main"));
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (openMenuKeyBinding.wasPressed() && client.player != null && client.currentScreen == null) {
-                client.setScreen(new MainMenuScreen());
+                switch (gameStatus) {
+                    case IN_LOBBY, IN_GAME -> {
+                        client.setScreen(new LoadingScreen("Повернення..."));
+                        if (currentRoomId != null) {
+                            ClientPlayNetworking.send(new RejoinRequestC2SPayload(currentRoomId));
+                        }
+                    }
+                    default -> client.setScreen(new MainMenuScreen());
+                }
             }
         });
         registerS2CPacketHandlers();
@@ -56,15 +66,15 @@ public class AliasmodClient implements ClientModInitializer {
             });
         });
         ClientPlayNetworking.registerGlobalReceiver(LobbyStateS2CPayload.ID, (payload, context) -> {
+            gameStatus = ClientGameStatus.IN_LOBBY;
             currentLobbyState = payload.teamPlayers();
             currentRoomId = payload.roomId();
             currentRoomHostId = payload.hostId();
             canStartGame = payload.canStart();
-            context.client().execute(() -> {
-                context.client().setScreen(new LobbyScreen(payload.roomId()));
-            });
+            context.client().execute(() -> context.client().setScreen(new LobbyScreen(payload.roomId())));
         });
         ClientPlayNetworking.registerGlobalReceiver(GameRoundS2CPayload.ID, (payload, context) -> {
+            gameStatus = ClientGameStatus.IN_GAME;
             activePlayerName = payload.activePlayerName();
             context.client().execute(() -> context.client().setScreen(new GameScreen(
                     payload.activePlayerName(),
@@ -81,9 +91,9 @@ public class AliasmodClient implements ClientModInitializer {
             });
         });
         ClientPlayNetworking.registerGlobalReceiver(GameOverS2CPayload.ID, (payload, context) -> {
-            context.client().execute(() -> {
-                context.client().setScreen(new GameOverScreen(payload.winnerText()));
-            });
+            gameStatus = ClientGameStatus.NONE;
+            currentRoomId = null;
+            context.client().execute(() -> context.client().setScreen(new GameOverScreen(payload.winnerText())));
         });
     }
 }

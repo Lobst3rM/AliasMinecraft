@@ -11,7 +11,6 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
-
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -51,7 +50,6 @@ public class LobbyGui extends LightweightGuiDescription {
         WScrollPanel scrollPanel = new WScrollPanel(teamsPanel);
         root.add(scrollPanel, 0, 2, 16, 9);
 
-
         WButton startGameButton = new WButton(Text.literal("Почати гру"));
         startGameButton.setOnClick(() -> ClientPlayNetworking.send(new StartGameC2SPayload(roomId)));
         if (selfUuid.equals(AliasmodClient.currentRoomHostId)) {
@@ -62,6 +60,8 @@ public class LobbyGui extends LightweightGuiDescription {
         WButton leaveButton = new WButton(Text.literal("Вийти"));
         leaveButton.setOnClick(() -> {
             ClientPlayNetworking.send(new LeaveRoomC2SPayload(roomId));
+            AliasmodClient.gameStatus = AliasmodClient.ClientGameStatus.NONE;
+            AliasmodClient.currentRoomId = null;
             MinecraftClient.getInstance().setScreen(new MainMenuScreen());
         });
         root.add(leaveButton, 6, 12, 5, 1);

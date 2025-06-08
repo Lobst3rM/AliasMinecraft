@@ -1,6 +1,5 @@
 package Lobaster.aliasmod.game;
 
-import Lobaster.aliasmod.Aliasmod;
 import Lobaster.aliasmod.ThemeManager;
 import Lobaster.aliasmod.networking.payload.PlayerActionC2SPayload;
 import net.minecraft.server.MinecraftServer;
@@ -22,6 +21,7 @@ public class GameRoom {
     private int currentPlayerIndexInTeam = 0;
     private List<String> wordsForGame;
     private int roundTimerTicks;
+    private String currentWord;
     private static final int TICKS_PER_SECOND = 20;
     private static final int ROUND_DURATION_SECONDS = 60;
     private static final int WIN_SCORE = 100;
@@ -65,7 +65,6 @@ public class GameRoom {
     public void processPlayerAction(ServerPlayerEntity player, PlayerActionC2SPayload.ActionType action, MinecraftServer server) {
         ServerPlayerEntity currentPlayer = getCurrentPlayer(server);
         if (currentPlayer == null || !player.getUuid().equals(currentPlayer.getUuid()) || gameState != GameState.IN_GAME) return;
-
         if (action == PlayerActionC2SPayload.ActionType.GUESSED) {
             Team playerTeam = getPlayerTeam(player.getUuid());
             if (playerTeam != null) {
@@ -80,13 +79,11 @@ public class GameRoom {
             if (roundTimerTicks < 0) roundTimerTicks = 0;
             GameManager.broadcastTimerUpdate(this, roundTimerTicks / TICKS_PER_SECOND, server);
         }
-
         GameManager.sendWordUpdate(this, server);
     }
 
     private void endGame(MinecraftServer server, Team winningTeam) {
         this.gameState = GameState.FINISHED;
-        Aliasmod.LOGGER.info("Гра закінчена! Перемогла команда {}", winningTeam.getTeamId());
         GameManager.broadcastGameOver(this, winningTeam, server);
     }
 
@@ -110,10 +107,11 @@ public class GameRoom {
         return null;
     }
 
-    public String getNextWord() {
-        if (wordsForGame.isEmpty()) return "СЛОВА ЗАКІНЧИЛИСЬ";
-        return wordsForGame.remove(0);
+    public void setNextWord() {
+        this.currentWord = wordsForGame.isEmpty() ? "СЛОВА ЗАКІНЧИЛИСЬ" : wordsForGame.remove(0);
     }
+
+    public String getCurrentWord() { return this.currentWord != null ? this.currentWord : ""; }
 
     public void addPlayer(ServerPlayerEntity player, int teamId) {
         if (allPlayers.contains(player.getUuid())) {
@@ -139,31 +137,21 @@ public class GameRoom {
         teams.stream().filter(team -> team.getTeamId() == newTeamId).findFirst().ifPresent(team -> team.addPlayer(player));
     }
 
-    public Team getPlayerTeam(UUID playerUuid) {
-        return teams.stream().filter(team -> team.getPlayerUuids().contains(playerUuid)).findFirst().orElse(null);
-    }
-
-    public int getTeamScore(int teamId) {
-        return teams.stream().filter(t -> t.getTeamId() == teamId).findFirst().map(Team::getScore).orElse(0);
-    }
-
-    public List<ServerPlayerEntity> getAllPlayers(MinecraftServer server) {
-        return allPlayers.stream().map(uuid -> server.getPlayerManager().getPlayer(uuid)).filter(Objects::nonNull).collect(Collectors.toList());
-    }
+    public Team getPlayerTeam(UUID playerUuid) { return teams.stream().filter(team -> team.getPlayerUuids().contains(playerUuid)).findFirst().orElse(null); }
+    public int getTeamScore(int teamId) { return teams.stream().filter(t -> t.getTeamId() == teamId).findFirst().map(Team::getScore).orElse(0); }
+    public List<ServerPlayerEntity> getAllPlayers(MinecraftServer server) { return allPlayers.stream().map(uuid -> server.getPlayerManager().getPlayer(uuid)).filter(Objects::nonNull).collect(Collectors.toList()); }
 
     public RoomInfo toRoomInfo(MinecraftServer server) {
         ServerPlayerEntity host = server.getPlayerManager().getPlayer(hostId);
         String hostName = (host != null) ? host.getName().getString() : "N/A";
-        return new RoomInfo(roomId, hostName, allPlayers.size(), teams.size() * maxPlayersPerTeam);
+        return new RoomInfo(roomId, hostName, allPlayers.size(), teams.size() * maxPlayersPerTeam, this.gameState);
     }
 
-    public boolean canStartGame() {
-        return teams.stream().filter(team -> !team.getPlayerUuids().isEmpty()).count() >= 2;
-    }
-
+    public boolean canStartGame() { return teams.stream().filter(team -> !team.getPlayerUuids().isEmpty()).count() >= 2; }
     public boolean isEmpty() { return allPlayers.isEmpty(); }
     public UUID getRoomId() { return roomId; }
     public UUID getHostId() { return hostId; }
     public List<Team> getTeams() { return teams; }
     public List<UUID> getAllPlayersUuids() { return allPlayers; }
+    public GameState getGameState() { return gameState; }
 }

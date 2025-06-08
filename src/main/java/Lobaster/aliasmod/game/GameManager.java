@@ -18,16 +18,15 @@ public class GameManager {
     public static void createRoom(ServerPlayerEntity host, String themeName, int teamCount) {
         GameRoom newRoom = new GameRoom(host, themeName, teamCount);
         activeRooms.put(newRoom.getRoomId(), newRoom);
-        Aliasmod.LOGGER.info("Гравець '{}' створив нову кімнату. ID: {}", host.getName().getString(), newRoom.getRoomId());
         broadcastLobbyState(newRoom, host.getServer());
     }
 
     public static void joinRoom(ServerPlayerEntity player, UUID roomId) {
         GameRoom room = activeRooms.get(roomId);
-        if (room == null) return;
-        Team smallestTeam = room.getTeams().stream()
-                .min(Comparator.comparingInt(team -> team.getPlayerUuids().size()))
-                .orElse(null);
+        if (room == null || room.getGameState() != GameRoom.GameState.LOBBY) {
+            return;
+        }
+        Team smallestTeam = room.getTeams().stream().min(Comparator.comparingInt(team -> team.getPlayerUuids().size())).orElse(null);
         if (smallestTeam != null) {
             room.addPlayer(player, smallestTeam.getTeamId());
             broadcastLobbyState(room, player.getServer());
@@ -40,9 +39,19 @@ public class GameManager {
         room.removePlayer(player);
         if (room.isEmpty()) {
             activeRooms.remove(roomId);
-            Aliasmod.LOGGER.info("Кімната {} порожня і була видалена.", roomId);
         } else {
             broadcastLobbyState(room, player.getServer());
+        }
+    }
+
+    public static void resyncPlayer(ServerPlayerEntity player, UUID roomId) {
+        GameRoom room = activeRooms.get(roomId);
+        if (room == null) return;
+        MinecraftServer server = player.getServer();
+        if (room.getGameState() == GameRoom.GameState.IN_GAME) {
+            broadcastGameRoundState(room, server, player);
+        } else if (room.getGameState() == GameRoom.GameState.LOBBY) {
+            broadcastLobbyState(room, server, player);
         }
     }
 
@@ -62,7 +71,6 @@ public class GameManager {
         GameRoom room = activeRooms.get(roomId);
         if (room == null || !room.getHostId().equals(player.getUuid()) || !room.canStartGame()) return;
         room.startGame(server);
-        Aliasmod.LOGGER.info("Гра почалася в кімнаті {}", roomId);
     }
 
     public static void tick(MinecraftServer server) {
@@ -77,16 +85,8 @@ public class GameManager {
     }
 
     public static void sendWordUpdate(GameRoom room, MinecraftServer server) {
-        ServerPlayerEntity activePlayer = room.getCurrentPlayer(server);
-        if (activePlayer == null) return;
-        String word = room.getNextWord();
-        int team1Score = room.getTeamScore(1);
-        int team2Score = room.getTeamScore(2);
-        for (ServerPlayerEntity playerInRoom : room.getAllPlayers(server)) {
-            String wordToShow = playerInRoom.equals(activePlayer) ? word : "******";
-            var payload = new GameRoundS2CPayload(activePlayer.getName().getString(), team1Score, team2Score, wordToShow);
-            ServerPlayNetworking.send(playerInRoom, payload);
-        }
+        room.setNextWord();
+        broadcastGameRoundState(room, server);
     }
 
     public static void startNextRound(GameRoom room, MinecraftServer server) {
@@ -94,19 +94,30 @@ public class GameManager {
         sendWordUpdate(room, server);
     }
 
+    public static void broadcastGameRoundState(GameRoom room, MinecraftServer server) {
+        room.getAllPlayers(server).forEach(player -> broadcastGameRoundState(room, server, player));
+    }
+
+    public static void broadcastGameRoundState(GameRoom room, MinecraftServer server, ServerPlayerEntity targetPlayer) {
+        ServerPlayerEntity activePlayer = room.getCurrentPlayer(server);
+        if (activePlayer == null) return;
+        String word = room.getCurrentWord();
+        int team1Score = room.getTeamScore(1);
+        int team2Score = room.getTeamScore(2);
+        String wordToShow = targetPlayer.equals(activePlayer) ? word : "******";
+        var payload = new GameRoundS2CPayload(activePlayer.getName().getString(), team1Score, team2Score, wordToShow);
+        ServerPlayNetworking.send(targetPlayer, payload);
+    }
+
     public static void broadcastLobbyState(GameRoom room, MinecraftServer server) {
-        Map<Integer, List<String>> teamPlayersMap = room.getTeams().stream()
-                .collect(Collectors.toMap(
-                        Team::getTeamId,
-                        team -> team.getPlayerUuids().stream()
-                                .map(uuid -> server.getPlayerManager().getPlayer(uuid))
-                                .filter(Objects::nonNull)
-                                .map(p -> p.getName().getString())
-                                .collect(Collectors.toList())
-                ));
+        room.getAllPlayers(server).forEach(player -> broadcastLobbyState(room, server, player));
+    }
+
+    public static void broadcastLobbyState(GameRoom room, MinecraftServer server, ServerPlayerEntity targetPlayer) {
+        Map<Integer, List<String>> teamPlayersMap = room.getTeams().stream().collect(Collectors.toMap(Team::getTeamId, team -> team.getPlayerUuids().stream().map(uuid -> server.getPlayerManager().getPlayer(uuid)).filter(Objects::nonNull).map(p -> p.getName().getString()).collect(Collectors.toList())));
         boolean canStart = room.canStartGame();
         var payload = new LobbyStateS2CPayload(room.getRoomId(), room.getHostId(), teamPlayersMap, canStart);
-        room.getAllPlayers(server).forEach(playerInRoom -> ServerPlayNetworking.send(playerInRoom, payload));
+        ServerPlayNetworking.send(targetPlayer, payload);
     }
 
     public static void broadcastTimerUpdate(GameRoom room, int remainingSeconds, MinecraftServer server) {
@@ -122,14 +133,10 @@ public class GameManager {
     }
 
     public static List<RoomInfo> getRoomInfos(MinecraftServer server) {
-        return activeRooms.values().stream()
-                .map(room -> room.toRoomInfo(server))
-                .collect(Collectors.toList());
+        return activeRooms.values().stream().map(room -> room.toRoomInfo(server)).collect(Collectors.toList());
     }
 
     private static Optional<GameRoom> findRoomByPlayer(UUID playerUuid) {
-        return activeRooms.values().stream()
-                .filter(r -> r.getAllPlayersUuids().contains(playerUuid))
-                .findFirst();
+        return activeRooms.values().stream().filter(r -> r.getAllPlayersUuids().contains(playerUuid)).findFirst();
     }
 }
